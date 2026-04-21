@@ -2,17 +2,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Non-root user
+# Add non-root user
 RUN useradd -m appuser
 
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install curl (for healthcheck) safely with version pinning
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl=8.3.1-1+deb13u1 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
 COPY . .
 
 USER appuser
