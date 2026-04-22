@@ -1,25 +1,22 @@
-# Base image
-FROM python:3.12-alpine
-
-# Set working directory
+# Stage 1: Build dependencies
+FROM python:3.12.13-alpine AS builder
 WORKDIR /app
 
-# Install curl and build dependencies with pinned versions
-# curl=8.2.1-r2 and build-base is a meta package, we can pin each underlying tool
+# Install pinned build dependencies
 RUN apk add --no-cache \
-    curl=8.2.1-r2 \
     gcc=13.2.1_git20230306-r0 \
     g++=13.2.1_git20230306-r0 \
     musl-dev=1.2.4-r3 \
     libffi-dev=3.4.4-r3 \
     make=4.4-r1 \
-    bash=5.2.15-r2
+    bash=5.2.15-r2 \
+    curl=8.2.1-r2
 
 # Copy requirements
-COPY requirements.txt .
+COPY requirements.txt ./
 
 # Install Python dependencies including dev tools
-RUN pip install --no-cache-dir \
+RUN pip install --user --no-cache-dir \
     fastapi==0.99.1 \
     uvicorn==0.23.1 \
     httpx==0.28.1 \
@@ -30,10 +27,25 @@ RUN pip install --no-cache-dir \
     flake8==6.1.0
 
 # Copy app source
-COPY . .
+COPY api/ ./api
+
+# Stage 2: Final image
+FROM python:3.12.13-alpine
+WORKDIR /app
+
+# Create non-root user
+RUN adduser -D myuser
+USER myuser
+
+# Copy installed Python packages from builder
+COPY --from=builder /root/.local /root/.local
+COPY --from=builder /app/api ./api
+
+# Ensure pip-installed binaries are in PATH
+ENV PATH=/root/.local/bin:$PATH
 
 # Expose API port
 EXPOSE 8000
 
-# Start the app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start FastAPI app
+CMD ["uvicorn", "api.app_main:app", "--host", "0.0.0.0", "--port", "8000"]
