@@ -1,17 +1,18 @@
+# Use lightweight Node image
 FROM node:18-alpine
 
 # Set working directory
 WORKDIR /app
 
-# Install dependencies in a single RUN
-COPY ./frontend/package*.json ./
+# Copy package files and install dependencies
+COPY package*.json ./
 RUN npm install --production
 
-# Copy source files
-COPY ./frontend /app
+# Copy the rest of the source code
+COPY . .
 
-# Expose port
+# Expose frontend port
 EXPOSE 3000
 
-# Start frontend
+# Start the frontend
 CMD ["npm", "start"]

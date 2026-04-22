@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
-from main import app
+from main import app  # import your FastAPI app
 
-# Use TestClient for FastAPI
+# Use FastAPI's TestClient
 client = TestClient(app)
 
 
@@ -13,7 +13,6 @@ def test_docs():
 
 # Test creating a job (mock Redis)
 def test_create_job(monkeypatch):
-    # Patch the Redis connection in your app
     class DummyRedis:
         def rpush(self, *args, **kwargs):
             return 1

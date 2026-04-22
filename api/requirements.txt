@@ -1,6 +1,6 @@
-httpx
-pytest-cov
+httpx==0.28.1
+pytest-cov==7.1.0
 fastapi==0.99.1
 uvicorn==0.23.1
 redis==5.1.1
-pytest==8.2.3
+pytest==8.3.5
