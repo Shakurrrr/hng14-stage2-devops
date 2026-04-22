@@ -1,18 +1,29 @@
+# Multi-stage build
+FROM python:3.12-alpine AS build
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev openssl-dev curl
+
+COPY requirements.txt .
+RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
+
+# Final stage
 FROM python:3.12-alpine
 
 WORKDIR /app
 
-# Add non-root user
+# Non-root user
 RUN adduser -D appuser
 
-# Install dependencies (combined RUN to satisfy DL3059)
-# hadolint ignore=DL3018
-RUN apk add --no-cache curl && \
-    rm -rf /var/cache/apk/*
+# Runtime dependencies
+RUN apk add --no-cache curl
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy installed Python packages from build stage
+COPY --from=build /install /usr/local
 
+# Copy worker code
 COPY . .
 
 USER appuser

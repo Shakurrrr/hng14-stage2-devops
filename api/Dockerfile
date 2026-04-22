@@ -1,19 +1,29 @@
-FROM python:3.12-slim
+# Multi-stage build
+FROM python:3.12-alpine AS build
 
 WORKDIR /app
 
-# Add non-root user
-RUN useradd -m appuser
-
-# Install curl (for healthcheck) safely
-# hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev openssl-dev curl
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 
+# Final stage
+FROM python:3.12-alpine
+
+WORKDIR /app
+
+# Non-root user
+RUN adduser -D appuser
+
+# Install runtime dependencies
+RUN apk add --no-cache curl
+
+# Copy installed Python packages from build stage
+COPY --from=build /install /usr/local
+
+# Copy app code
 COPY . .
 
 USER appuser
