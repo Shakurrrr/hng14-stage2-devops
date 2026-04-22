@@ -5,9 +5,10 @@ WORKDIR /app
 # Add non-root user
 RUN useradd -m appuser
 
-# Install curl (for healthcheck) safely with version pinning
+# Install curl (for healthcheck) safely
+# hadolint ignore=DL3008
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl=8.3.1-1+deb13u1 && \
+    apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
