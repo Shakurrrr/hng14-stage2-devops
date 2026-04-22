@@ -1,35 +1,40 @@
+# test_health.py
 from fastapi.testclient import TestClient
-from main import app  # import your FastAPI app
+from app_main import app, r  # import FastAPI app and DummyRedis
 
-# Use FastAPI's TestClient
 client = TestClient(app)
+
+
+# Test root endpoint
+def test_read_root():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+# Test creating a job
+def test_create_job():
+    response = client.post("/jobs")
+    assert response.status_code == 200
+    assert "job_id" in response.json()
+
+
+# Test getting a job status
+def test_job_status():
+    # First create a job
+    create_resp = client.post("/jobs")
+    job_id = create_resp.json()["job_id"]
+
+    # Set status manually in DummyRedis
+    r.hset(f"job:{job_id}", "status", "completed")
+
+    # Now fetch the job
+    response = client.get(f"/jobs/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
 
 
 # Test /docs endpoint
 def test_docs():
     response = client.get("/docs")
     assert response.status_code == 200
-
-
-# Test creating a job (mock Redis)
-def test_create_job(monkeypatch):
-    class DummyRedis:
-        def rpush(self, *args, **kwargs):
-            return 1
-
-    monkeypatch.setattr("main.redis_conn", DummyRedis())
-    response = client.post("/jobs")
-    assert response.status_code == 200
-    assert "job_id" in response.json()
-
-
-# Test job status endpoint (mock Redis)
-def test_job_status(monkeypatch):
-    class DummyRedis:
-        def get(self, key):
-            return b"completed"
-
-    monkeypatch.setattr("main.redis_conn", DummyRedis())
-    response = client.get("/jobs/123/status")
-    assert response.status_code == 200
-    assert response.json()["status"] == "completed"
