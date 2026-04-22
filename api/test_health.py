@@ -1,6 +1,6 @@
 # test_health.py
 from fastapi.testclient import TestClient
-from api.app_main import app, r  # import FastAPI app and DummyRedis
+from .app_main import app, r  # import FastAPI app and DummyRedis
 
 client = TestClient(app)
 
