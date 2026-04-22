@@ -15,17 +15,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Python Lint
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Python lint tools
-        run: pip install flake8
-
-      - name: Lint Python (API + Worker)
-        run: flake8 api worker
+      # Docker-based Python lint for consistent environment
+      - name: Lint Python (flake8) inside Docker
+        run: |
+          docker build -f api/Dockerfile -t api-lint .
+          docker run --rm api-lint flake8 api worker
 
       # JS Lint
       - name: Setup Node
@@ -65,23 +59,20 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Build API Docker image for tests
+        run: docker build -f api/Dockerfile -t api-test .
 
-      - name: Install dependencies
-        run: |
-          pip install -r api/requirements.txt
-          pip install pytest pytest-cov
-
-      - name: Run API tests with coverage
-        run: |
-          pytest api --cov=api --cov-report=xml --cov-report=term
+      - name: Run tests inside Docker
+        run: docker run --rm --network host api-test pytest --maxfail=1 --disable-warnings -q --cov=api --cov-report=xml --cov-report=term
 
       - name: Upload coverage report as artifact
         uses: actions/upload-artifact@v4
@@ -163,12 +154,8 @@ jobs:
       - name: Rolling deployment simulation
         run: |
           docker compose up -d --build
-
           echo "Waiting for health check..."
           sleep 30
-
           curl -f http://localhost:8000/docs
-
           docker compose down
-
           echo "Deployment successful"
