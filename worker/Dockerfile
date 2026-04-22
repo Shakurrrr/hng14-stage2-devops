@@ -1,12 +1,12 @@
-FROM python:3.12-slim
+FROM python:3.12-alpine
 
 WORKDIR /app
 
 # Add non-root user
-RUN useradd -m appuser
+RUN adduser -D appuser
 
-# Install curl (for healthcheck) safely
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# Install curl (Alpine uses apk, not apt)
+RUN apk add --no-cache curl
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
