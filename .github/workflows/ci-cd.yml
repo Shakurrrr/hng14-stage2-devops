@@ -80,9 +80,9 @@ jobs:
           pip install pytest pytest-cov
 
       - name: Run API tests with coverage
+        env:
+          PYTHONPATH: ${{ github.workspace }}/api  # ensures app_main imports correctly
         run: |
-          # Add api/ to PYTHONPATH so app_main can be imported
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/api
           cd api
           pytest --cov=api --cov-report=xml --cov-report=term
 
