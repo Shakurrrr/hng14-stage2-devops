@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-from .app_main import app, r  # Import the real Redis object
 
 client = TestClient(app)
 
