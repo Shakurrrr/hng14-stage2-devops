@@ -1,22 +1,20 @@
+# Base image
 FROM python:3.12-alpine
-
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Install dependencies with version pinning and single RUN
-RUN apk add --no-cache bash=5.2.15-r0 curl=8.2.1-r0 \
-    && pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r /app/api/requirements.txt
 
 # Set working directory
 WORKDIR /app
 
-# Copy app files
-COPY ./api /app
+# Copy requirements first for caching
+COPY requirements.txt .
+
+# Install dependencies in a single RUN, pin versions from requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy app source
+COPY . .
 
 # Expose port
 EXPOSE 8000
 
-# Start API
+# Start the app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
