@@ -4,10 +4,18 @@ FROM python:3.12-alpine
 # Set working directory
 WORKDIR /app
 
-# Install curl and build dependencies
-RUN apk add --no-cache curl build-base
+# Install curl and build dependencies with pinned versions
+# curl=8.2.1-r2 and build-base is a meta package, we can pin each underlying tool
+RUN apk add --no-cache \
+    curl=8.2.1-r2 \
+    gcc=13.2.1_git20230306-r0 \
+    g++=13.2.1_git20230306-r0 \
+    musl-dev=1.2.4-r3 \
+    libffi-dev=3.4.4-r3 \
+    make=4.4-r1 \
+    bash=5.2.15-r2
 
-# Copy requirements (if you want, you can keep a separate requirements.txt)
+# Copy requirements
 COPY requirements.txt .
 
 # Install Python dependencies including dev tools
