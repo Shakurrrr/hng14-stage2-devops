@@ -1,27 +1,17 @@
-# Multi-stage build
-FROM python:3.12-alpine AS build
-
-WORKDIR /app
-
-# Install build dependencies
-RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev openssl-dev curl
-
-COPY requirements.txt .
-RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
-
-# Final stage
 FROM python:3.12-alpine
 
 WORKDIR /app
 
-# Non-root user
+# Add non-root user
 RUN adduser -D appuser
 
-# Install runtime dependencies
-RUN apk add --no-cache curl
+# Install dependencies in a single RUN and pin versions
+# You can check current versions using `apk info -v` or leave latest if not critical
+RUN apk add --no-cache curl=8.2.1-r0 bash=5.2.15-r0
 
-# Copy installed Python packages from build stage
-COPY --from=build /install /usr/local
+# Copy Python requirements first for caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY . .
@@ -32,6 +22,6 @@ EXPOSE 8000
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD curl -f http://localhost:8000/docs || exit 1
+    CMD curl -f http://localhost:8000/docs || exit 1
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
