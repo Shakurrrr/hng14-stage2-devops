@@ -1,36 +1,19 @@
-# Multi-stage build
-FROM python:3.12-alpine AS build
-
-WORKDIR /app
-
-# Install build dependencies
-RUN apk add --no-cache --virtual .build-deps gcc musl-dev libffi-dev openssl-dev curl
-
-COPY requirements.txt .
-RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
-
-# Final stage
 FROM python:3.12-alpine
 
+# Environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install dependencies in a single RUN
+RUN apk add --no-cache bash=5.2.15-r0 curl=8.2.1-r0 \
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/worker/requirements.txt
+
+# Set working directory
 WORKDIR /app
 
-# Non-root user
-RUN adduser -D appuser
+# Copy app files
+COPY ./worker /app
 
-# Runtime dependencies
-RUN apk add --no-cache curl
-
-# Copy installed Python packages from build stage
-COPY --from=build /install /usr/local
-
-# Copy worker code
-COPY . .
-
-USER appuser
-
-EXPOSE 8000
-
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD curl -f http://localhost:8000/docs || exit 1
-
+# Start Worker
 CMD ["python", "worker.py"]

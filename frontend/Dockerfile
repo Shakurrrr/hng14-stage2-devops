@@ -1,23 +1,17 @@
-FROM node:18-alpine AS build
+FROM node:18-alpine
 
+# Set working directory
 WORKDIR /app
 
-# Non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-# Install dependencies
-COPY package*.json ./
+# Install dependencies in a single RUN
+COPY ./frontend/package*.json ./
 RUN npm install --production
 
-# Copy frontend code
-COPY . .
+# Copy source files
+COPY ./frontend /app
 
-USER appuser
-
+# Expose port
 EXPOSE 3000
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:3000 || exit 1
-
-CMD ["node", "app.js"]
+# Start frontend
+CMD ["npm", "start"]

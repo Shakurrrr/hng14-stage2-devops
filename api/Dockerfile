@@ -1,23 +1,22 @@
 FROM python:3.12-alpine
 
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install dependencies with version pinning and single RUN
+RUN apk add --no-cache bash=5.2.15-r0 curl=8.2.1-r0 \
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/api/requirements.txt
+
+# Set working directory
 WORKDIR /app
 
-# Consolidate user creation, package install, and cleanup into one RUN
-RUN adduser -D appuser && \
-    apk add --no-cache curl=8.2.1-r0 bash=5.2.15-r0
+# Copy app files
+COPY ./api /app
 
-# Copy Python dependencies first
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-USER appuser
-
+# Expose port
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-    CMD curl -f http://localhost:8000/docs || exit 1
-
+# Start API
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
