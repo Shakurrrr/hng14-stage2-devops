@@ -34,4 +34,3 @@ def test_job_status(monkeypatch):
     response = client.get("/jobs/123/status")
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
-    
