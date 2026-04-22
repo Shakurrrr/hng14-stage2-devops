@@ -6,10 +6,12 @@ from main import app
 # Use TestClient for FastAPI
 client = TestClient(app)
 
+
 # Test /docs endpoint
 def test_docs():
     response = client.get("/docs")
     assert response.status_code == 200
+
 
 # Test creating a job (mock Redis)
 def test_create_job(monkeypatch):
@@ -23,11 +25,13 @@ def test_create_job(monkeypatch):
     assert response.status_code == 200
     assert "job_id" in response.json()
 
+
 # Test job status endpoint (mock Redis)
 def test_job_status(monkeypatch):
     class DummyRedis:
         def get(self, key):
             return b"completed"
+
 
     monkeypatch.setattr("main.redis_conn", DummyRedis())
     response = client.get("/jobs/123/status")
