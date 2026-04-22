@@ -1,10 +1,9 @@
-# app_main.py
 from fastapi import FastAPI
 import uuid
 
+
 app = FastAPI()
 
-# Dummy Redis class to mock Redis behavior
 
 class DummyRedis:
     def __init__(self):

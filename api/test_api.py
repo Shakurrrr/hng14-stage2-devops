@@ -1,4 +1,6 @@
 from fastapi.testclient import TestClient
+from api.app_main import app  # Correct import
+# from api.app_main import r  # Removed unused import
 
 client = TestClient(app)
 
@@ -10,15 +12,10 @@ def test_docs_endpoint():
 
 def test_create_job_endpoint(monkeypatch):
     class DummyRedis:
-        def lpush(self, key, value):
+        def rpush(self, *args, **kwargs):
             return 1
 
-        def hset(self, key, field, value):
-            return 1
-
-    # Patch the correct object 'r' in app_main
     monkeypatch.setattr("api.app_main.r", DummyRedis())
-
     response = client.post("/jobs")
     assert response.status_code == 200
     assert "job_id" in response.json()
@@ -26,12 +23,10 @@ def test_create_job_endpoint(monkeypatch):
 
 def test_job_status_endpoint(monkeypatch):
     class DummyRedis:
-        def hget(self, key, field):
+        def get(self, key):
             return b"completed"
 
-    # Patch the correct object 'r' in app_main
     monkeypatch.setattr("api.app_main.r", DummyRedis())
-
-    response = client.get("/jobs/123")
+    response = client.get("/jobs/123/status")
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
