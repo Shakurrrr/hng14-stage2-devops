@@ -2,10 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Non-root user
+# Add non-root user
 RUN useradd -m appuser
 
-# Copy and install dependencies
+# Install curl (for healthcheck) safely
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -15,8 +17,8 @@ USER appuser
 
 EXPOSE 8000
 
-# Healthcheck (optional but recommended)
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD pgrep -f worker.py || exit 1
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
+  CMD curl -f http://localhost:8000/docs || exit 1
 
-CMD ["python", "worker.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
