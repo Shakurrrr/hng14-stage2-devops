@@ -1,5 +1,3 @@
-import os
-import pytest
 from fastapi.testclient import TestClient
 from main import app
 
@@ -31,7 +29,6 @@ def test_job_status(monkeypatch):
     class DummyRedis:
         def get(self, key):
             return b"completed"
-
 
     monkeypatch.setattr("main.redis_conn", DummyRedis())
     response = client.get("/jobs/123/status")
