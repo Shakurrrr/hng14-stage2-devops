@@ -1,41 +1,35 @@
-# ------------------- Stage 1: Build -------------------
-FROM python:3.12-alpine AS builder
-WORKDIR /app
+# syntax=docker/dockerfile:1
 
-# Install build dependencies
-RUN apk add --no-cache \
-    gcc=13.2.1_git20230306-r0 \
-    g++=13.2.1_git20230306-r0 \
-    musl-dev=1.2.4-r3 \
-    libffi-dev=3.4.4-r3 \
-    make=4.4-r1 \
-    bash=5.2.15-r2 \
-    curl=8.2.1-r2
+# ─── Stage 1: builder ────────────────────────────────────────────────────────
+FROM python:3.11-alpine AS builder
 
-# Copy requirements and install into user site
+WORKDIR /build
+
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Copy API source
-COPY . ./api
+RUN pip install --no-cache-dir "pip==24.0" \
+    && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# ------------------- Stage 2: Final -------------------
-FROM python:3.12-alpine
+# ─── Stage 2: final ──────────────────────────────────────────────────────────
+FROM python:3.11-alpine
+
 WORKDIR /app
 
-# Create non-root user
-RUN adduser -D myuser
-USER myuser
+# Copy installed packages from builder — no pip or build tools in final image
+COPY --from=builder /install /usr/local
 
-# Copy Python packages and app from builder
-COPY --from=builder /root/.local /root/.local
-COPY --from=builder /app/api ./api
+# Copy application source
+COPY main.py .
 
-# Add user site to PATH
-ENV PATH=/root/.local/bin:$PATH
+# Create non-root user and hand over ownership
+RUN adduser -D -u 1001 appuser \
+    && chown -R appuser:appuser /app
+    
+USER appuser
 
-# Expose FastAPI port
 EXPOSE 8000
 
-# Start FastAPI
-CMD ["uvicorn", "api.app_main:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
