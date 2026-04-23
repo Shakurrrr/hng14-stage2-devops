@@ -42,7 +42,8 @@ def test_create_job_writes_to_redis(client, mock_redis):
     job_id = response.json()["job_id"]
 
     mock_redis.lpush.assert_called_once_with("jobs", job_id)
-    mock_redis.hset.assert_called_once_with(f"job:{job_id}", "status", "queued")
+    mock_redis.hset.assert_called_once_with(
+        f"job:{job_id}", "status", "queued")
 
 
 # ── Test 3: GET /jobs/{id} returns status for existing job ───────────────────
