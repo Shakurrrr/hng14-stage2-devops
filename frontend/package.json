@@ -3,14 +3,11 @@
   "version": "1.0.0",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "lint": "eslint ."
+    "start": "node app.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.4.0"
   },
-  "devDependencies": {
-    "eslint": "^8.46.0"
-  }
+  "engines": { "node": ">=18.0.0" }
 }

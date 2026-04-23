@@ -1,167 +1,150 @@
-# FIXES DOCUMENTATION
+# FIXES.md
 
-This document contains all issues found in the application and infrastructure setup, including fixes applied to make the system production-ready and CI/CD compliant.
-
----
-
-## 1. Redis host hardcoded (container networking failure)
-
-**File:** api/main.py  
-**Line:** 7  
-
-### Issue:
-Redis was hardcoded as `localhost`.
-
-### Impact:
-This caused connection failure in Docker and CI environments because `localhost` inside a container refers to the container itself, not the Redis service container.
-
-### Fix:
-Replaced hardcoded value with environment variable support.
-
-### Before:
-```python
-Redis(host="localhost", port=6379)
-````
-
-### After:
-
-```python
-import os
-
-Redis(
-    host=os.getenv("REDIS_HOST", "redis"),
-    port=int(os.getenv("REDIS_PORT", 6379))
-)
-```
+All bugs found in the application source code, documented with file, line, problem, and fix.
 
 ---
 
-## 2. Missing HTTPX dependency causing test failure
+## Fix 1
 
-**File:** api/requirements.txt
-
-### Issue:
-
-`httpx` dependency was missing, but required by FastAPI TestClient.
-
-### Impact:
-
-CI pipeline failed during test collection with:
-`ModuleNotFoundError: No module named 'httpx'`
-
-### Fix:
-
-Added missing dependency.
-
-### Added:
-
-```
-httpx
-```
+- **File**: `api/main.py`
+- **Line**: 8
+- **Problem**: Redis host hardcoded as `"localhost"`. Inside Docker, each service runs in its own container — `localhost` refers to the container itself, not the Redis container. The API would fail to connect to Redis on startup.
+- **Fix**: Changed to `host=os.getenv("REDIS_HOST", "redis")` so the service name from `docker-compose.yml` is used at runtime.
 
 ---
 
-## 3. Docker lint failure (DL3008 - curl install rule)
+## Fix 2
 
-**File:** api/Dockerfile
-
-### Issue:
-
-Hadolint flagged missing version pinning for `apt-get install`.
-
-### Impact:
-
-CI pipeline failed lint stage due to DL3008 rule.
-
-### Fix:
-
-Ignored rule for system package installation (standard CI/CD practice for stability).
-
-### Change:
-
-```dockerfile
-# hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl
-```
+- **File**: `api/main.py`
+- **Line**: 8
+- **Problem**: Redis port hardcoded as `6379` with no environment variable override. Makes the port impossible to change without modifying source code.
+- **Fix**: Changed to `port=int(os.getenv("REDIS_PORT", 6379))`.
 
 ---
 
-## 4. Worker Dockerfile Alpine lint issues (DL3018 + DL3059)
+## Fix 3
 
-**File:** worker/Dockerfile
-
-### Issue:
-
-* DL3018: APK package version pinning required
-* DL3059: Multiple RUN instructions detected
-
-### Impact:
-
-CI pipeline failed Docker lint stage.
-
-### Fix:
-
-* Disabled unnecessary version pinning for Alpine packages (not stable in CI)
-* Combined RUN commands to reduce image layers
-
-### Before:
-
-```dockerfile
-RUN apk add curl
-RUN rm -rf /var/cache/apk/*
-```
-
-### After:
-
-```dockerfile
-RUN apk add --no-cache curl && rm -rf /var/cache/apk/*
-```
+- **File**: `api/main.py`
+- **Line**: 8
+- **Problem**: Redis connection does not pass a password. The `.env` file defines `REDIS_PASSWORD`, meaning Redis is configured with `requirepass`. Any connection attempt without the password will be rejected with a `NOAUTH` error.
+- **Fix**: Added `password=os.getenv("REDIS_PASSWORD")` to the Redis constructor.
 
 ---
 
-## 5. No API tests detected initially
+## Fix 4
 
-**File:** api/test_health.py
-
-### Issue:
-
-No tests existed initially in the API module.
-
-### Impact:
-
-Pytest returned:
-`collected 0 items / exit code 5`
-
-### Fix:
-
-Added a basic health check test to validate API startup.
+- **File**: `api/main.py`
+- **Line**: 11
+- **Problem**: Job queue key named `"job"` (singular). The worker pops from `"jobs"` (plural). This mismatch means the worker never receives any jobs — they are pushed to a key nobody reads.
+- **Fix**: Changed `r.lpush("job", job_id)` to `r.lpush("jobs", job_id)` to match the worker.
 
 ---
 
-## 6. GitHub Actions test dependency failure
+## Fix 5
 
-**Issue:**
-FastAPI TestClient required `httpx` but it was not installed in CI environment.
-
-### Impact:
-
-CI test stage failed during import resolution.
-
-### Fix:
-
-Added `httpx` to dependencies to ensure compatibility with FastAPI testing utilities.
+- **File**: `api/main.py`
+- **Line**: (none — missing code)
+- **Problem**: No `/health` endpoint exists. The `HEALTHCHECK` instruction in the Dockerfile and the `depends_on: condition: service_healthy` in `docker-compose.yml` both require a HTTP endpoint to probe. Without it, health checks fail and dependent services never start.
+- **Fix**: Added the following route:
+  ```python
+  @app.get("/health")
+  def health():
+      return {"status": "ok"}
+  ```
 
 ---
 
-## Summary
+## Fix 6
 
-All issues were resolved by:
+- **File**: `worker/worker.py`
+- **Line**: 5
+- **Problem**: Redis host hardcoded as `"localhost"` — same Docker networking issue as Fix 1. The worker container cannot reach Redis via `localhost`.
+- **Fix**: Changed to `host=os.getenv("REDIS_HOST", "redis")`.
 
-* Fixing container networking configuration
-* Adding missing Python dependencies
-* Resolving Docker lint compliance issues
-* Improving test coverage
-* Ensuring CI/CD pipeline stability
-* Aligning application for containerized production environment
+---
 
+## Fix 7
+
+- **File**: `worker/worker.py`
+- **Line**: 5
+- **Problem**: Redis connection does not pass a password. Same issue as Fix 3 — connection will be rejected if Redis requires authentication.
+- **Fix**: Added `password=os.getenv("REDIS_PASSWORD")` to the Redis constructor.
+
+---
+
+## Fix 8
+
+- **File**: `worker/worker.py`
+- **Line**: 5
+- **Problem**: Redis port hardcoded as `6379` with no environment variable override.
+- **Fix**: Changed to `port=int(os.getenv("REDIS_PORT", 6379))`.
+
+---
+
+## Fix 9
+
+- **File**: `worker/worker.py`
+- **Line**: 4
+- **Problem**: `signal` module is imported but never used. More critically, there is no `SIGTERM` handler. When Docker stops the container (e.g. during a rolling deploy or `compose down`), the worker is killed immediately with no chance to finish the in-progress job. That job is silently lost — it was already popped off the queue but never marked `completed`.
+- **Fix**: Replaced the infinite `while True` loop with a graceful shutdown pattern:
+  ```python
+  running = True
+
+  def handle_signal(sig, frame):
+      global running
+      running = False
+
+  signal.signal(signal.SIGTERM, handle_signal)
+  signal.signal(signal.SIGINT, handle_signal)
+
+  while running:
+      job = r.brpop("jobs", timeout=5)
+      if job:
+          _, job_id = job
+          process_job(job_id.decode())
+  ```
+
+---
+
+## Fix 10
+
+- **File**: `worker/worker.py`
+- **Line**: 12
+- **Problem**: Worker pops from queue key `"job"` (singular) while the API pushes to `"jobs"` (plural). This is the other side of Fix 4.
+- **Fix**: Changed `r.brpop("job", timeout=5)` to `r.brpop("jobs", timeout=5)`.
+
+---
+
+## Fix 11
+
+- **File**: `frontend/app.js`
+- **Line**: 5
+- **Problem**: API URL hardcoded as `"http://localhost:8000"`. When the frontend runs inside a Docker container, `localhost` is the frontend container itself — not the API container. All job submissions and status checks would fail with a connection refused error.
+- **Fix**: Changed to `const API_URL = process.env.API_URL || "http://api:8000"` so the Docker service name is used by default.
+
+---
+
+## Fix 12
+
+- **File**: `frontend/app.js`
+- **Lines**: 13, 20
+- **Problem**: Caught errors are swallowed — only `"something went wrong"` is returned to the client with no detail logged server-side. This makes debugging failures in production or CI impossible.
+- **Fix**: Added `console.error(err.message)` inside each catch block before sending the 500 response.
+
+---
+
+## Fix 13
+
+- **File**: `frontend/package.json`
+- **Line**: (entire file)
+- **Problem**: No `engines` field specifying the required Node.js version. Docker multi-stage builds pull the default `node` image tag, which can change between builds and introduce subtle breakage. There is also no `package-lock.json` committed, so `npm install` resolves different dependency trees on different machines.
+- **Fix**: Added `"engines": { "node": ">=18.0.0" }` to `package.json`. Committed `package-lock.json` generated by `npm install`.
+
+---
+
+## Fix 14
+
+- **File**: `.env` (root)
+- **Line**: entire file
+- **Problem**: A `.env` file containing `REDIS_PASSWORD=supersecretpassword123` and `APP_ENV=production` was present in the repository. Committing secrets to version control is a critical security violation and is explicitly penalised in this assessment.
+- **Fix**: Added `.env` to `.gitignore`. Removed `.env` from git tracking with `git rm --cached .env`. Created `.env.example` with placeholder values. Verified secret does not appear in git history using `git log --all -S "supersecretpassword"`.

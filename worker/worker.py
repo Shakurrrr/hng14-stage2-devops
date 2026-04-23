@@ -3,54 +3,45 @@ import time
 import os
 import signal
 
-# CONFIG
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-
-r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT)
-
-
-# GRACEFUL SHUTDOWN
 running = True
 
 
-def shutdown(signum, frame):
+def handle_signal(sig, frame):
     global running
-    print("[WORKER] Shutting down gracefully...")
     running = False
 
 
-signal.signal(signal.SIGINT, shutdown)
-signal.signal(signal.SIGTERM, shutdown)
+signal.signal(signal.SIGTERM, handle_signal)
+signal.signal(signal.SIGINT, handle_signal)
 
 
-# PROCESSING LOGIC
-def process_job(job_id: str):
-    print(f"[WORKER] Processing job {job_id}")
+def get_redis_connection():
+    while True:
+        try:
+            client = redis.Redis(
+                host=os.getenv("REDIS_HOST", "redis"),
+                port=int(os.getenv("REDIS_PORT", 6379)),
+                password=os.getenv("REDIS_PASSWORD")
+            )
+            client.ping()
+            print("Connected to Redis")
+            return client
+        except Exception as e:
+            print(f"Redis not ready: {e} — retrying in 2s")
+            time.sleep(2)
+
+
+def process_job(r, job_id):
+    print(f"Processing job {job_id}")
     time.sleep(2)
     r.hset(f"job:{job_id}", "status", "completed")
-    print(f"[WORKER] Done: {job_id}")
+    print(f"Done: {job_id}")
 
 
-# MAIN LOOP
-print(f"[WORKER] Starting worker... connected to {REDIS_HOST}:{REDIS_PORT}")
-
+r = get_redis_connection()
 
 while running:
-    try:
-        job = r.brpop("job", timeout=5)
-
-        if job:
-            _, job_id = job
-            process_job(job_id.decode())
-
-    except redis.exceptions.ConnectionError as e:
-        print(f"[ERROR] Redis connection failed: {e}")
-        time.sleep(3)
-
-    except Exception as e:
-        print(f"[ERROR] Unexpected error: {e}")
-        time.sleep(1)
-
-
-print("[WORKER] stopped cleanly")
+    job = r.brpop("jobs", timeout=5)
+    if job:
+        _, job_id = job
+        process_job(r, job_id.decode())
