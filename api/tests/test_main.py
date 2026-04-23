@@ -4,14 +4,14 @@ from unittest.mock import patch
 import sys
 import os
 
-from api.main import app, r
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import main  # noqa: E402
 
 
 @pytest.fixture
 def mock_redis():
-    with patch("api.main.r") as mock_r:
+    with patch("main.r") as mock_r:
         yield mock_r
 
 
@@ -87,4 +87,3 @@ def test_get_job_completed_status(client, mock_redis):
     data = response.json()
     assert data["status"] == "completed"
     assert data["job_id"] == "done-job-456"
-    
