@@ -64,6 +64,7 @@ jobs:
       - name: Lint Dockerfile — frontend
         run: hadolint frontend/Dockerfile
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 2: TEST
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ jobs:
         with:
           name: coverage-report
           path: api/coverage.xml
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 3: BUILD
@@ -169,6 +171,7 @@ jobs:
           name: image-tags
           path: image-tags.env
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 4: SECURITY SCAN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +240,7 @@ jobs:
             trivy-api.sarif
             trivy-worker.sarif
             trivy-frontend.sarif
+            
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 5: INTEGRATION TEST
@@ -245,16 +249,6 @@ jobs:
     name: Integration Test
     runs-on: ubuntu-latest
     needs: security
-    services:
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: > 
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 2s
-          --health-retries 10
 
     steps:
       - name: Checkout code
@@ -270,12 +264,128 @@ jobs:
       - name: Build and bring stack up
         run: docker compose up --build -d
 
-      - name: Wait for Redis to be ready
+      - name: Wait for all services to be healthy
         run: |
-          echo "Waiting for Redis service to be healthy..."
-          for i in {1..30}; do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q redis) 2>/dev/null || echo "starting")
-            echo "Attempt $i — Redis: $STATUS"
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Redis is ready!"
-              break
+          echo "Waiting for services to become healthy..."
+          for i in $(seq 1 30); do
+            FRONTEND=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q frontend) 2>/dev/null || echo "starting")
+            API=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q api) 2>/dev/null || echo "starting")
+            WORKER=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q worker) 2>/dev/null || echo "starting")
+            echo "Attempt $i — frontend: $FRONTEND | api: $API | worker: $WORKER"
+            if [ "$FRONTEND" = "healthy" ] && [ "$API" = "healthy" ] && [ "$WORKER" = "healthy" ]; then
+              echo "All services healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Services did not become healthy in time."
+          docker compose logs
+          exit 1
+
+      - name: Submit a job via frontend
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:3000/submit \
+            -H "Content-Type: application/json")
+          echo "Submit response: $RESPONSE"
+          JOB_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+          echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
+
+      - name: Poll until job is completed
+        run: |
+          echo "Polling job $JOB_ID for completion..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s http://localhost:3000/status/$JOB_ID \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))")
+            echo "Attempt $i — status: $STATUS"
+            if [ "$STATUS" = "completed" ]; then
+              echo "Job completed successfully."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Job did not complete in time."
+          docker compose logs
+          exit 1
+
+      - name: Show all logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 6: DEPLOY
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: integration
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deploy secrets are configured
+        id: check_secrets
+        run: |
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then
+            echo "DEPLOY_HOST secret not set — skipping deploy"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy via rolling update
+        if: steps.check_secrets.outputs.skip == 'false'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            echo "Pulling latest code..."
+            git pull origin main
+            echo "Building new images..."
+            docker compose build
+            SERVICES="api worker frontend"
+            for SERVICE in $SERVICES; do
+              echo "Rolling update for: $SERVICE"
+              OLD_CONTAINER=$(docker compose ps -q $SERVICE 2>/dev/null || true)
+              docker compose up -d --no-deps --scale ${SERVICE}=2 $SERVICE
+              DEADLINE=$((SECONDS + 60))
+              NEW_HEALTHY=false
+              while [ $SECONDS -lt $DEADLINE ]; do
+                NEW_CONTAINER=$(docker compose ps -q $SERVICE | tail -1)
+                HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $NEW_CONTAINER 2>/dev/null || echo "none")
+                echo "  Health: $HEALTH"
+                if [ "$HEALTH" = "healthy" ]; then
+                  NEW_HEALTHY=true
+                  break
+                fi
+                sleep 5
+              done
+              if [ "$NEW_HEALTHY" = "false" ]; then
+                echo "Health check failed — aborting, old container left running"
+                docker compose up -d --no-deps --scale ${SERVICE}=1 $SERVICE
+                exit 1
+              fi
+              if [ -n "$OLD_CONTAINER" ]; then
+                docker stop $OLD_CONTAINER
+                docker rm $OLD_CONTAINER
+              fi
+              docker compose up -d --no-deps --scale ${SERVICE}=1 $SERVICE
+              echo "$SERVICE rolling update complete."
+            done
+            echo "All services deployed successfully."
+            docker compose ps
+
+      - name: Deploy skipped
+        if: steps.check_secrets.outputs.skip == 'true'
+        run: echo "Deploy skipped — no server configured. Add DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PORT and DEPLOY_PATH secrets to enable."
